@@ -1,8 +1,7 @@
 import React, { ReactNode, useContext, useMemo, useState, useCallback, useLayoutEffect } from 'react';
-import { useDebouncedState, useMutableCallback } from '@rocket.chat/fuselage-hooks';
-import { Handler } from '@rocket.chat/emitter';
+import { useDebouncedState, useMutableCallback, useSafely } from '@rocket.chat/fuselage-hooks';
 
-import { ToolboxContext } from '../lib/Toolbox/ToolboxContext';
+import { ToolboxContext, ToolboxEventHandler } from '../lib/Toolbox/ToolboxContext';
 import { ToolboxAction, ToolboxActionConfig } from '../lib/Toolbox/index';
 import { IRoom } from '../../../../definition/IRoom';
 import { useCurrentRoute, useRoute } from '../../../contexts/RouterContext';
@@ -37,7 +36,7 @@ const VirtualAction = React.memo(({ handleChange, room, action, id }: { id: stri
 	return null;
 });
 
-const useToolboxActions = (room: IRoom): { listen: (handler: Handler<any>) => Function; actions: Array<[string, ToolboxAction]> } => {
+const useToolboxActions = (room: IRoom): { listen: ToolboxEventHandler; actions: Array<[string, ToolboxAction]> } => {
 	const { listen, actions } = useContext(ToolboxContext);
 	const [state, setState] = useState<Array<[string, ToolboxAction]>>(Array.from(actions.entries()));
 
@@ -56,7 +55,7 @@ export const ToolboxProvider = ({ children, room }: { children: ReactNode; room:
 	const allowAnonymousRead = useSetting('Accounts_AllowAnonymousRead');
 	const uid = useUserId();
 	const [activeTabBar, setActiveTabBar] = useState<[ToolboxActionConfig|undefined, string?]>([undefined]);
-	const [list, setList] = useDebouncedState<Store<ToolboxAction>>(new Map(), 5);
+	const [list, setList] = useSafely(useDebouncedState<Store<ToolboxAction>>(new Map(), 5));
 	const handleChange = useMutableCallback((fn) => { fn(list); setList((list) => new Map(list)); });
 	const { listen, actions } = useToolboxActions(room);
 
@@ -68,19 +67,22 @@ export const ToolboxProvider = ({ children, room }: { children: ReactNode; room:
 	const tab = params?.tab;
 	const context = params?.context;
 
-	const open = useMutableCallback((actionId, context) => {
-		router.push({
-			...params,
-			tab: actionId,
-			context,
-		});
-	});
-
 	const close = useMutableCallback(() => {
 		router.push({
 			...params,
 			tab: '',
 			context: '',
+		});
+	});
+
+	const open = useMutableCallback((actionId, context) => {
+		if (actionId === activeTabBar[0]?.id && context === undefined) {
+			return close();
+		}
+		router.push({
+			...params,
+			tab: actionId,
+			context,
 		});
 	});
 
